@@ -47,10 +47,14 @@ export default function CustomersClient({ initialCustomers, totalCount, areas, p
       const { data, count, error } = await query;
       if (error) throw error;
 
-      let filtered: Customer[] = data || [];
+      const customersData = (data as Customer[]) || [];
+      let filtered = customersData;
+
       if (search) {
-        filtered = filtered.filter(c =>
-          c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search)
+        const s = search.toLowerCase();
+        filtered = customersData.filter(c => 
+          (c.name?.toLowerCase().includes(s)) || 
+          (c.phone?.includes(search))
         );
       }
 
