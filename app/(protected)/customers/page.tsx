@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import CustomersClient from "./CustomersClient";
+import { Customer } from "@/types";
 
 export const metadata = { title: "Customer Management — FCF ERP" };
 
@@ -18,7 +19,8 @@ export default async function CustomersPage() {
 
   if (!profile) redirect("/login");
 
-  const areas = Array.from(new Set((customers || []).map(c => c.area).filter(Boolean))) as string[];
+  const customersList = (customers as Customer[]) || [];
+  const areas = Array.from(new Set(customersList.map(c => c.area).filter(Boolean))) as string[];
 
   return (
     <CustomersClient

@@ -218,6 +218,16 @@ export interface Settings {
   updated_at: string;
 }
 
+export interface Expense {
+  id: string;
+  expense_date: string;
+  category: string;
+  amount: number;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 // ============================================================
 // VIEW TYPES
 // ============================================================
@@ -330,6 +340,7 @@ export type Database = {
       notification_logs: { Row: NotificationLog; Insert: Omit<NotificationLog, "id" | "created_at">; Update: Partial<NotificationLog> };
       notification_templates: { Row: NotificationTemplate; Insert: Omit<NotificationTemplate, "id" | "created_at" | "updated_at">; Update: Partial<NotificationTemplate> };
       settings: { Row: Settings; Insert: Omit<Settings, "id" | "created_at" | "updated_at">; Update: Partial<Settings> };
+      expenses: { Row: Expense; Insert: Omit<Expense, "id" | "created_at">; Update: Partial<Expense> };
     };
     Views: {
       vw_today_summary: { Row: TodaySummary };

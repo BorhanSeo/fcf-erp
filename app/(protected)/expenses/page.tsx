@@ -9,11 +9,11 @@ export default async function ExpensesPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const profile = profileData as any;
   if (!profile || profile.role !== "admin") redirect("/dashboard");
 
-  const { data: expenses, error } = await supabase
-    .from("expenses")
+  const { data: expenses, error } = await (supabase.from("expenses") as any)
     .select("*")
     .order("expense_date", { ascending: false })
     .limit(100);

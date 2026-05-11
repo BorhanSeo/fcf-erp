@@ -24,7 +24,7 @@ export default async function PriceListPage() {
 
   return (
     <PriceListClient
-      initialProducts={products || []}
+      initialProducts={(products || []) as any}
       categories={categories || []}
       profile={profile}
     />

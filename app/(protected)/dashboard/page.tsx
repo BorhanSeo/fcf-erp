@@ -27,7 +27,8 @@ export default async function DashboardPage() {
 
   if (!profile) redirect("/login");
 
-  const totalDue = activeOrdersWithDue?.reduce((sum, o) => sum + (o.due_amount || 0), 0) || 0;
+  const activeOrders = (activeOrdersWithDue as { due_amount: number }[]) || [];
+  const totalDue = activeOrders.reduce((sum, o) => sum + (o.due_amount || 0), 0);
 
   return (
     <DashboardClient

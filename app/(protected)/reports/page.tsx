@@ -45,11 +45,11 @@ export default async function ReportsPage() {
       todayOrders={todayOrders || []}
       monthOrders={monthOrders || []}
       yearOrders={yearOrders || []}
-      todayPayments={todayPayments || []}
-      monthPayments={monthPayments || []}
-      yearPayments={yearPayments || []}
-      monthOrderItems={monthOrderItems || []}
-      yearOrderItems={yearOrderItems || []}
+      todayPayments={(todayPayments || []) as any}
+      monthPayments={(monthPayments || []) as any}
+      yearPayments={(yearPayments || []) as any}
+      monthOrderItems={(monthOrderItems || []) as any}
+      yearOrderItems={(yearOrderItems || []) as any}
       currentYear={year}
       currentMonth={month}
     />

@@ -25,8 +25,8 @@ export default async function NewOrderPage() {
 
   return (
     <NewOrderClient
-      customers={customers || []}
-      products={products || []}
+      customers={(customers || []) as any}
+      products={(products || []) as any}
       userId={user.id}
     />
   );

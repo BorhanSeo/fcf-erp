@@ -77,7 +77,7 @@ export default function CustomerProfileClient({ customer, orders, payments, prof
     setSaving(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("customers").update(editData).eq("id", customer.id);
+      const { error } = await (supabase.from("customers") as any).update(editData).eq("id", customer.id);
       if (error) throw error;
       toast.success("Customer info updated");
       setShowEditModal(false);
@@ -134,7 +134,7 @@ export default function CustomerProfileClient({ customer, orders, payments, prof
                   setSaving(true);
                   try {
                     const supabase = createClient();
-                    const { error } = await supabase.from("customers").delete().eq("id", customer.id);
+                    const { error } = await (supabase.from("customers") as any).delete().eq("id", customer.id);
                     if (error) {
                       if (error.code === '23503') throw new Error("Database Error: Cannot delete customer with existing orders (FK constraint).");
                       throw error;

@@ -48,11 +48,12 @@ export default async function PaymentsPage() {
   (activeOrders || []).forEach(o => {
     if (o.due_amount > 0 && o.customers) {
       if (!customerDuesMap.has(o.customer_id)) {
+        const c = o.customers as any;
         customerDuesMap.set(o.customer_id, {
           id: o.customer_id,
-          name: o.customers.name,
-          phone: o.customers.phone,
-          area: o.customers.area,
+          name: c.name || (Array.isArray(c) ? c[0]?.name : ""),
+          phone: c.phone || (Array.isArray(c) ? c[0]?.phone : ""),
+          area: c.area || (Array.isArray(c) ? c[0]?.area : ""),
           total_due: 0
         });
       }

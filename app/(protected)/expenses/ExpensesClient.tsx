@@ -67,8 +67,7 @@ export default function ExpensesClient({ initialExpenses, userId }: Props) {
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("expenses")
+      const { data, error } = await (supabase.from("expenses") as any)
         .insert({
           expense_date: form.expense_date,
           category: form.category,
