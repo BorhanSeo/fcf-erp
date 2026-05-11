@@ -83,7 +83,7 @@ export default function CustomersClient({ initialCustomers, totalCount, areas, p
         is_active: true,
       };
 
-      const { error } = await supabase.from("customers").insert([insertData]);
+      const { error } = await (supabase.from("customers") as any).insert([insertData]);
       if (error) throw error;
       toast.success("New customer added");
       setShowAddModal(false);
