@@ -26,23 +26,20 @@ export default function UsersClient({ users: initialUsers, currentUserId }: Prop
     }
     setSaving(true);
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: newUser.email,
-        password: newUser.password,
-        email_confirm: true,
-        user_metadata: { full_name: newUser.full_name },
+      const res = await fetch("/api/admin/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newUser.email,
+          password: newUser.password,
+          full_name: newUser.full_name,
+          phone: newUser.phone,
+          role: newUser.role,
+        }),
       });
-      if (error) throw error;
 
-      await supabase.from("profiles").insert({
-        id: data.user.id,
-        full_name: newUser.full_name,
-        email: newUser.email,
-        phone: newUser.phone,
-        role: newUser.role,
-        is_active: true,
-      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed to create user");
 
       toast.success("New user added");
       setShowAddModal(false);
