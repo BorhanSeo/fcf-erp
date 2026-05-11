@@ -73,9 +73,17 @@ export default function CustomersClient({ initialCustomers, totalCount, areas, p
     setSaving(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("customers").insert({
-        ...newCustomer, total_due: 0, total_purchase: 0, is_active: true,
-      });
+      const insertData = {
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        address: newCustomer.address,
+        area: newCustomer.area,
+        total_due: 0,
+        total_purchase: 0,
+        is_active: true,
+      };
+
+      const { error } = await supabase.from("customers").insert([insertData]);
       if (error) throw error;
       toast.success("New customer added");
       setShowAddModal(false);
