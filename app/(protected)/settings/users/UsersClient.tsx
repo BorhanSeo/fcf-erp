@@ -62,7 +62,7 @@ export default function UsersClient({ users: initialUsers, currentUserId }: Prop
       const supabase = createClient();
       const { error } = await supabase.from("profiles").update(editData).eq("id", editingUser.id);
       if (error) throw error;
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...editData } : u));
+      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...editData } as Profile : u));
       toast.success("Information updated");
       setEditingUser(null);
     } catch {
