@@ -18,7 +18,7 @@ export default async function CustomersPage() {
 
   if (!profile) redirect("/login");
 
-  const areas = [...new Set((customers || []).map(c => c.area).filter(Boolean))] as string[];
+  const areas = Array.from(new Set((customers || []).map(c => c.area).filter(Boolean))) as string[];
 
   return (
     <CustomersClient
