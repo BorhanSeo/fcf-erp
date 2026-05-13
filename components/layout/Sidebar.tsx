@@ -181,6 +181,7 @@ export default function Sidebar({ role, collapsed = false, onClose }: SidebarPro
             <Link
               key={item.href}
               href={item.href}
+              prefetch
               className={cn(
                 "sidebar-item",
                 isActive && "active",

@@ -1,14 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { redirect, notFound } from "next/navigation";
 import InvoiceView from "./InvoiceView";
 
 interface Props { params: { id: string } }
 
 export default async function InvoicePage({ params }: Props) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
     .select(`

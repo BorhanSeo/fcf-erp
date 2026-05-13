@@ -1,26 +1,26 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import PaymentsClient from "./PaymentsClient";
 
 export const metadata = { title: "Payments & Due Tracking — FCF ERP" };
 
 export default async function PaymentsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
   const today = new Date().toISOString().split("T")[0];
   const monthStart = today.slice(0, 7) + "-01";
 
-  // Fetch profile + ALL data in parallel (single round-trip)
+  const supabase = await createClient();
   const [
-    { data: profile },
+    profile,
     { data: activeOrders },
     { data: suppliersWithDue },
     { data: recentSupplierPayments },
     { data: customerPayments },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    getProfile(user.id),
     supabase.from("orders").select("id, order_number, paid_amount, due_amount, payment_method, note, created_at, customer_id, customers(name, phone, area)").neq("status", "cancelled").order("created_at", { ascending: false }),
     supabase.from("suppliers").select("id, name, company, phone, total_due").gt("total_due", 0).order("total_due", { ascending: false }),
     supabase.from("supplier_payments").select("*, suppliers(name)").order("payment_date", { ascending: false }).limit(10),

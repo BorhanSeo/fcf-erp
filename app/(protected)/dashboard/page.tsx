@@ -1,23 +1,22 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import DashboardClient from "./DashboardClient";
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  // Fetch profile + ALL dashboard data in a single parallel batch
+  const supabase = await createClient();
   const [
-    { data: profile },
+    profile,
     { data: todaySummary },
     { data: lowStockItems },
     { data: recentOrders },
     { data: monthlyPL },
     { data: activeOrdersWithDue },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    getProfile(user.id),
     supabase.from("vw_today_summary").select("*").single(),
     supabase.from("vw_low_stock").select("*").limit(5),
     supabase.from("orders").select("*, customers(name, phone)").order("created_at", { ascending: false }).limit(5),

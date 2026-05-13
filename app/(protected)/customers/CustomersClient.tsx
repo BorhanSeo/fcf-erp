@@ -113,7 +113,9 @@ export default function CustomersClient({ initialCustomers, totalCount, areas, p
         if (error.code === '23503') throw new Error("Cannot delete customer with existing orders.");
         throw error;
       }
-      toast.success("Customer deleted");
+      toast.success("Customer deleted successfully");
+      setCustomers(prev => prev.filter(c => c.id !== id));
+      setTotal(prev => prev - 1);
       fetchCustomers(page);
     } catch (err: any) {
       toast.error(err.message || "Failed to delete");

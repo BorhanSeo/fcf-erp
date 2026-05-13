@@ -46,17 +46,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: createError.message }, { status: 400 });
     }
 
-    // 4. Create profile entry
+    // 4. Create profile entry (upsert to handle duplicates)
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
-      .insert({
+      .upsert({
         id: newUser.user.id,
         full_name,
         email,
         phone: phone || "",
         role: role || "staff",
         is_active: true,
-      });
+      }, { onConflict: "id" });
 
     if (profileError) {
       // Cleanup: delete the auth user if profile creation fails

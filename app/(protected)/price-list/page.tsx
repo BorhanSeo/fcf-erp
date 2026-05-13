@@ -1,17 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import PriceListClient from "./PriceListClient";
 
 export const metadata = { title: "Price List — FCF ERP" };
 
 export default async function PriceListPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const profile = await getProfile(user.id);
   if (!profile) redirect("/login");
 
+  const supabase = await createClient();
   const [{ data: products }, { data: categories }] = await Promise.all([
     supabase
       .from("products")

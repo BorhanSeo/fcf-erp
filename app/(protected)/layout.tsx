@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile, getSettings } from "@/lib/supabase/auth";
 import AppLayout from "@/components/layout/AppLayout";
 
 export default async function ProtectedLayout({
@@ -7,33 +7,15 @@ export default async function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [profile, settings] = await Promise.all([
+    getProfile(user.id),
+    getSettings(),
+  ]);
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  // Get profile data
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || !profile.is_active) {
-    redirect("/login");
-  }
-
-  // Get system settings
-  const { data: settingsData } = await supabase.from("settings").select("*");
-  const settings = settingsData?.reduce(
-    (acc, row) => ({ ...acc, [row.key]: row.value }),
-    {} as Record<string, string>
-  ) || {};
+  if (!profile || !profile.is_active) redirect("/login");
 
   return <AppLayout user={profile} settings={settings}>{children}</AppLayout>;
 }

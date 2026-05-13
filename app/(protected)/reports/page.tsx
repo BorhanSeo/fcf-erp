@@ -1,12 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import ReportsClient from "./ReportsClient";
 
 export const metadata = { title: "Profit & Loss Report — FCF ERP" };
 
 export default async function ReportsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
   const today = new Date().toISOString().split("T")[0];
@@ -15,9 +15,9 @@ export default async function ReportsPage() {
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const yearStart = `${year}-01-01`;
 
-  // Profile + ALL report data in a single parallel batch
+  const supabase = await createClient();
   const [
-    { data: profile },
+    profile,
     { data: todayOrders },
     { data: monthOrders },
     { data: yearOrders },
@@ -27,7 +27,7 @@ export default async function ReportsPage() {
     { data: monthOrderItems },
     { data: yearOrderItems },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    getProfile(user.id),
     supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", today).neq("status", "cancelled"),
     supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", monthStart).neq("status", "cancelled"),
     supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", yearStart).neq("status", "cancelled"),

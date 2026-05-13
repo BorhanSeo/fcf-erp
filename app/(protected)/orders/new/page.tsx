@@ -1,15 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import NewOrderClient from "./NewOrderClient";
 
 export const metadata = { title: "New Order — FCF ERP" };
 
 export default async function NewOrderPage() {
-  const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const supabase = await createClient();
   const [{ data: customers }, { data: products }] = await Promise.all([
     supabase
       .from("customers")

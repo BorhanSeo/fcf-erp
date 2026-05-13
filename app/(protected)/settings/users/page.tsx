@@ -1,17 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import UsersClient from "./UsersClient";
 
 export const metadata = { title: "User Management — FCF ERP" };
 
 export default async function UsersPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const profile = await getProfile(user.id);
   if (!profile || profile.role !== "admin") redirect("/dashboard");
 
+  const supabase = await createClient();
   const { data: users } = await supabase
     .from("profiles")
     .select("*")

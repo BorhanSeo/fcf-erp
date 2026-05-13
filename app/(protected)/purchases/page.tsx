@@ -1,17 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import PurchasesClient from "./PurchasesClient";
 
 export const metadata = { title: "Purchase Management — FCF ERP" };
 
 export default async function PurchasesPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  // Fetch profile + all data in parallel
-  const [{ data: profile }, { data: purchases }, { count }, { data: suppliers }, { data: purchaseTotals }] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+  const supabase = await createClient();
+  const [profile, { data: purchases }, { count }, { data: suppliers }, { data: purchaseTotals }] = await Promise.all([
+    getProfile(user.id),
     supabase.from("purchases").select("*, suppliers(id, name, phone)").order("created_at", { ascending: false }).limit(20),
     supabase.from("purchases").select("*", { count: "exact", head: true }),
     supabase.from("suppliers").select("id, name, phone").eq("is_active", true).order("name"),

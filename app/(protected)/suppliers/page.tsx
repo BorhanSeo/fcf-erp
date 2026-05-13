@@ -1,17 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getProfile } from "@/lib/supabase/auth";
 import { redirect } from "next/navigation";
 import SuppliersClient from "./SuppliersClient";
 
 export const metadata = { title: "Suppliers — FCF ERP" };
 
 export default async function SuppliersPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  // Fetch profile + data in parallel
-  const [{ data: profile }, { data: suppliers }, { count }] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+  const supabase = await createClient();
+  const [profile, { data: suppliers }, { count }] = await Promise.all([
+    getProfile(user.id),
     supabase.from("suppliers").select("*").order("total_due", { ascending: false }),
     supabase.from("suppliers").select("*", { count: "exact", head: true }),
   ]);
