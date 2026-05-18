@@ -46,6 +46,8 @@ export default function OrderDetailClient({ order, profile }: Props) {
   const [payModal, setPayModal] = useState<boolean>(false);
   const [payData, setPayData] = useState({ amount: String(order.due_amount), method: "cash", date: new Date().toISOString().split("T")[0], note: `Payment for Order ${order.order_number}` });
   const [savingPayment, setSavingPayment] = useState(false);
+  const [removeItem, setRemoveItem] = useState<{ id: string; name: string; quantity: number; unit: string | null } | null>(null);
+  const [removingItem, setRemovingItem] = useState(false);
 
   const updateStatus = async (newStatus: string) => {
     setLoading(true);
@@ -134,10 +136,27 @@ export default function OrderDetailClient({ order, profile }: Props) {
       toast.success(`Payment recorded: ${formatCurrency(amount)}`);
       setPayModal(false);
       router.refresh();
-    } catch (err: any) { 
-      toast.error(err.message || "Failed to record payment"); 
-    } finally { 
-      setSavingPayment(false); 
+    } catch (err: any) {
+      toast.error(err.message || "Failed to record payment");
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const handleRemoveItem = async () => {
+    if (!removeItem) return;
+    setRemovingItem(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from("order_items").delete().eq("id", removeItem.id);
+      if (error) throw error;
+      toast.success(`${removeItem.name} removed from order`);
+      setRemoveItem(null);
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove item");
+    } finally {
+      setRemovingItem(false);
     }
   };
 
@@ -269,6 +288,7 @@ export default function OrderDetailClient({ order, profile }: Props) {
                 <th className="text-right">Price</th>
                 <th className="text-right">Discount</th>
                 <th className="text-right">Total</th>
+                {admin && <th className="text-right">Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -284,6 +304,25 @@ export default function OrderDetailClient({ order, profile }: Props) {
                   <td className="text-right text-sm">{formatCurrency(item.unit_price)}</td>
                   <td className="text-right text-sm text-green-600">{item.discount > 0 ? formatCurrency(item.discount) : "—"}</td>
                   <td className="text-right font-semibold text-sm">{formatCurrency(item.line_total)}</td>
+                  {admin && (
+                    <td className="text-right">
+                      <button
+                        onClick={() => setRemoveItem({
+                          id: item.id,
+                          name: item.products?.name || "Item",
+                          quantity: item.quantity,
+                          unit: item.products?.unit ?? null,
+                        })}
+                        disabled={(order.order_items?.length || 0) <= 1}
+                        title={(order.order_items?.length || 0) <= 1 ? "Cannot remove the last item — delete the whole order instead" : "Remove this item from the order"}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -403,6 +442,39 @@ export default function OrderDetailClient({ order, profile }: Props) {
               <button onClick={handlePayment} disabled={savingPayment}
                 className="flex-1 h-10 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
                 {savingPayment ? "Saving..." : "Save Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove item dialog */}
+      {removeItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+            <h4 className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              Remove Item?
+            </h4>
+            <p className="text-sm text-slate-600 mb-2">
+              Remove <strong>{removeItem.name}</strong> ({removeItem.quantity} {removeItem.unit || "pcs"}) from this order?
+            </p>
+            {status === "delivered" && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-4">
+                Stock will be returned automatically and order totals will be recalculated.
+              </p>
+            )}
+            {status !== "delivered" && (
+              <p className="text-xs text-slate-500 mb-4">Order totals will be recalculated automatically.</p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setRemoveItem(null)} className="flex-1 h-10 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={handleRemoveItem}
+                disabled={removingItem}
+                className="flex-1 h-10 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {removingItem ? "Removing..." : "Yes, Remove"}
               </button>
             </div>
           </div>
