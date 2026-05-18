@@ -131,28 +131,8 @@ export default function NewOrderClient({ customers, products, userId }: Props) {
         throw new Error(itemsErr.message || "Order items insert failed");
       }
 
-      // Note: We DO NOT insert the invoice here from the frontend!
-      // The database has an AFTER INSERT trigger (on_order_create_invoice) 
-      // which automatically generates and inserts the invoice.
-
-      // Deduct stock & log movements (non-blocking)
-      for (const item of items) {
-        const newStock = Math.max(0, item.product.stock_quantity - item.quantity);
-        await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id);
-        await supabase.from("stock_movements").insert({
-          product_id: item.product_id,
-          movement_type: "sale_out",
-          quantity: item.quantity,
-          stock_before: item.product.stock_quantity,
-          stock_after: newStock,
-          reference_id: order.id,
-          reference_type: "order",
-          note: `Sale: ${orderNumber}`,
-          created_by: userId,
-        });
-      }
-
-      // Update customer totals (non-blocking) - handled automatically by database trigger sync_customer_totals
+      // Invoice + customer totals + stock are all handled by DB triggers.
+      // Stock deducts only when status → 'delivered' (fcf_order_stock_sync).
 
       localStorage.removeItem("fcf_order_draft");
       toast.success("Order created successfully! 🎉");
