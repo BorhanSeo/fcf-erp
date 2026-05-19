@@ -12,7 +12,7 @@ export default async function StockPage() {
   const supabase = await createClient();
   const [profile, { data: products }, { data: categories }] = await Promise.all([
     getProfile(user.id),
-    supabase.from("products").select("*, product_categories(id, name)").order("name"),
+    supabase.from("products").select("*, product_categories(id, name)").order("sort_order", { ascending: true, nullsFirst: false }).order("name"),
     supabase.from("product_categories").select("*").order("name"),
   ]);
 

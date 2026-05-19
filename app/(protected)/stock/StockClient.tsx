@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, isAdmin } from "@/lib/utils";
@@ -38,6 +38,8 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
   const [showAddModal, setShowAddModal] = useState(false);
   const [fullEditProduct, setFullEditProduct] = useState<ProductWithCategory | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const admin = isAdmin(profile.role);
 
   const filtered = products.filter((p) => {
@@ -48,13 +50,9 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
         !p.product_code?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }).sort((a, b) => {
-    const catA = a.product_categories?.name || "";
-    const catB = b.product_categories?.name || "";
-    if (catA !== catB) {
-      if (catA === "Kidz") return -1;
-      if (catB === "Kidz") return 1;
-      return catA.localeCompare(catB);
-    }
+    const orderA = (a as any).sort_order ?? 999999;
+    const orderB = (b as any).sort_order ?? 999999;
+    if (orderA !== orderB) return orderA - orderB;
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
@@ -114,6 +112,64 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
     } finally {
       setSavingName(false);
       setEditingName(null);
+    }
+  };
+
+  // Drag & Drop handlers
+  const handleDragStart = (e: React.DragEvent, productId: string) => {
+    setDragId(productId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', productId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, productId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (productId !== dragId) {
+      setDragOverId(productId);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDragId(null);
+    setDragOverId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      return;
+    }
+
+    // Reorder in filtered list
+    const currentOrder = [...filtered];
+    const dragIndex = currentOrder.findIndex(p => p.id === dragId);
+    const targetIndex = currentOrder.findIndex(p => p.id === targetId);
+    if (dragIndex === -1 || targetIndex === -1) return;
+
+    const [draggedItem] = currentOrder.splice(dragIndex, 1);
+    currentOrder.splice(targetIndex, 0, draggedItem);
+
+    // Update sort_order for all products
+    const updates = currentOrder.map((p, i) => ({ id: p.id, sort_order: i + 1 }));
+    const updatedProducts = products.map(p => {
+      const u = updates.find(u => u.id === p.id);
+      return u ? { ...p, sort_order: u.sort_order } as any : p;
+    });
+    setProducts(updatedProducts);
+    setDragId(null);
+
+    // Save to Supabase
+    try {
+      const supabase = createClient();
+      for (const u of updates) {
+        await supabase.from('products').update({ sort_order: u.sort_order }).eq('id', u.id);
+      }
+      toast.success('Order saved');
+    } catch {
+      toast.error('Failed to save order');
     }
   };
 
@@ -277,6 +333,7 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
           <table className="fcf-table">
             <thead>
               <tr>
+                {admin && <th className="w-8"></th>}
                 <th>Product Name</th>
                 <th>Subject</th>
                 <th>Category</th>
@@ -297,7 +354,22 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
                 const isLow = product.stock_quantity <= product.low_stock_threshold;
                 const isOut = product.stock_quantity <= 0;
                 return (
-                  <tr key={product.id} className={isOut ? "bg-red-50/50" : isLow ? "bg-amber-50/30" : ""}>
+                  <tr
+                    key={product.id}
+                    className={`${isOut ? "bg-red-50/50" : isLow ? "bg-amber-50/30" : ""} ${dragId === product.id ? "opacity-40" : ""} ${dragOverId === product.id ? "border-t-2 border-blue-500" : ""} transition-all`}
+                    draggable={admin}
+                    onDragStart={e => admin && handleDragStart(e, product.id)}
+                    onDragOver={e => admin && handleDragOver(e, product.id)}
+                    onDragEnd={handleDragEnd}
+                    onDrop={e => admin && handleDrop(e, product.id)}
+                  >
+                    {admin && (
+                      <td className="w-8 cursor-grab active:cursor-grabbing text-center">
+                        <svg className="w-4 h-4 text-slate-300 hover:text-slate-500 inline" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 6a2 2 0 112-2 2 2 0 01-2 2zm0 6a2 2 0 112-2 2 2 0 01-2 2zm0 6a2 2 0 112-2 2 2 0 01-2 2zm8-14a2 2 0 11-2-2 2 2 0 012 2zm0 6a2 2 0 11-2-2 2 2 0 012 2zm0 6a2 2 0 11-2-2 2 2 0 012 2z" />
+                        </svg>
+                      </td>
+                    )}
                     <td>
                       {admin && editingName === product.id ? (
                         <div className="flex items-center gap-1">
