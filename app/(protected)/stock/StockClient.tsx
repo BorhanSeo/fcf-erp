@@ -47,7 +47,7 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) &&
         !p.product_code?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
   const lowStockCount = products.filter(p => p.stock_quantity <= p.low_stock_threshold).length;
   const totalStockValue = products.reduce((sum, p) => sum + (p.purchase_price * p.stock_quantity), 0);
