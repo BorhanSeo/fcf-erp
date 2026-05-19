@@ -47,7 +47,16 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) &&
         !p.product_code?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  }).sort((a, b) => {
+    const catA = a.product_categories?.name || "";
+    const catB = b.product_categories?.name || "";
+    if (catA !== catB) {
+      if (catA === "Kidz") return -1;
+      if (catB === "Kidz") return 1;
+      return catA.localeCompare(catB);
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   const lowStockCount = products.filter(p => p.stock_quantity <= p.low_stock_threshold).length;
   const totalStockValue = products.reduce((sum, p) => sum + (p.purchase_price * p.stock_quantity), 0);
