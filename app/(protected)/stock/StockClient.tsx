@@ -31,6 +31,9 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
   const [editingThreshold, setEditingThreshold] = useState<string | null>(null);
   const [thresholdValue, setThresholdValue] = useState(0);
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [nameValue, setNameValue] = useState("");
+  const [savingName, setSavingName] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const admin = isAdmin(profile.role);
@@ -70,6 +73,36 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
     } finally {
       setSavingThreshold(false);
       setEditingThreshold(null);
+    }
+  };
+
+  const startEditName = (p: ProductWithCategory) => {
+    setEditingName(p.id);
+    setNameValue(p.name);
+  };
+
+  const saveName = async (productId: string) => {
+    if (!nameValue.trim()) {
+      toast.error("Product name cannot be empty");
+      return;
+    }
+    setSavingName(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("products")
+        .update({ name: nameValue.trim() })
+        .eq("id", productId);
+      if (error) throw error;
+      setProducts(products.map(p =>
+        p.id === productId ? { ...p, name: nameValue.trim() } : p
+      ));
+      toast.success("Product name updated");
+    } catch {
+      toast.error("Failed to update name");
+    } finally {
+      setSavingName(false);
+      setEditingName(null);
     }
   };
 
@@ -255,7 +288,47 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
                 return (
                   <tr key={product.id} className={isOut ? "bg-red-50/50" : isLow ? "bg-amber-50/30" : ""}>
                     <td>
-                      <p className="font-medium text-sm text-slate-800">{product.name}</p>
+                      {admin && editingName === product.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={nameValue}
+                            onChange={e => setNameValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") saveName(product.id);
+                              if (e.key === "Escape") setEditingName(null);
+                            }}
+                            className="w-40 h-7 px-2 border border-blue-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                          />
+                          <button onClick={() => saveName(product.id)} disabled={savingName}
+                            className="text-green-600 hover:text-green-800 p-0.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button onClick={() => setEditingName(null)} className="text-slate-400 hover:text-slate-600 p-0.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 group">
+                          <p className="font-medium text-sm text-slate-800">{product.name}</p>
+                          {admin && (
+                            <button
+                              onClick={() => startEditName(product)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-blue-600"
+                              title="Edit name"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="text-sm text-slate-600">{product.subject || "—"}</td>
                     <td>
@@ -367,15 +440,44 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
             const isOut = product.stock_quantity <= 0;
             return (
               <div key={product.id} className={`p-4 space-y-3 ${isOut ? "bg-red-50/30" : isLow ? "bg-amber-50/20" : ""}`}>
-                <div className="flex items-center justify-between">
-                   <div>
-                      <p className="font-bold text-slate-900">{product.name}</p>
+                 <div className="flex items-start justify-between gap-2">
+                   <div className="flex-1 min-w-0">
+                      {admin && editingName === product.id ? (
+                        <div className="flex items-center gap-1 mb-1">
+                          <input
+                            type="text"
+                            value={nameValue}
+                            onChange={e => setNameValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") saveName(product.id);
+                              if (e.key === "Escape") setEditingName(null);
+                            }}
+                            className="flex-1 h-7 px-2 border border-blue-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                          />
+                          <button onClick={() => saveName(product.id)} disabled={savingName} className="text-green-600 p-0.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          </button>
+                          <button onClick={() => setEditingName(null)} className="text-slate-400 p-0.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 group">
+                          <p className="font-bold text-slate-900">{product.name}</p>
+                          {admin && (
+                            <button onClick={() => startEditName(product)} className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-blue-600" title="Edit name">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <p className="text-[10px] text-slate-400 font-medium">{product.product_code || "No Code"}</p>
                    </div>
-                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium flex-shrink-0">
                       {product.product_categories?.name || "—"}
                    </span>
-                </div>
+                 </div>
                 <div className="flex justify-between items-end">
                    <div className="space-y-1">
                       <p className="text-[10px] text-slate-400 uppercase font-bold">Details</p>
