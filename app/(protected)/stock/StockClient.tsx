@@ -8,6 +8,7 @@ import { Product, Profile, ProductCategory } from "@/types";
 import { toast } from "sonner";
 import StockAdjustModal from "./StockAdjustModal";
 import AddProductModal from "./AddProductModal";
+import EditProductModal from "./EditProductModal";
 
 type ProductWithCategory = Product & {
   product_categories: { id: string; name: string } | null;
@@ -35,6 +36,7 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
   const [nameValue, setNameValue] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [fullEditProduct, setFullEditProduct] = useState<ProductWithCategory | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const admin = isAdmin(profile.role);
 
@@ -398,6 +400,15 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
                         {admin && (
                           <>
                             <button
+                              onClick={() => setFullEditProduct(product)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Edit product"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
                               onClick={() => setAdjustProduct(product)}
                               className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                               title="Adjust stock"
@@ -510,9 +521,14 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                       </Link>
                       {admin && (
-                         <button onClick={() => setAdjustProduct(product)} className="p-2 text-slate-400 hover:text-green-600 bg-slate-50 rounded-lg">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                         </button>
+                         <>
+                           <button onClick={() => setFullEditProduct(product)} className="p-2 text-slate-400 hover:text-indigo-600 bg-slate-50 rounded-lg" title="Edit product">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                           </button>
+                           <button onClick={() => setAdjustProduct(product)} className="p-2 text-slate-400 hover:text-green-600 bg-slate-50 rounded-lg" title="Adjust stock">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                           </button>
+                         </>
                       )}
                    </div>
                    {admin && (
@@ -550,6 +566,20 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
           onAdded={(newProduct) => {
             setProducts([newProduct, ...products]);
             setShowAddModal(false);
+          }}
+        />
+      )}
+
+      {/* Full Edit Product Modal */}
+      {fullEditProduct && (
+        <EditProductModal
+          product={fullEditProduct}
+          categories={categories}
+          userId={profile.id}
+          onClose={() => setFullEditProduct(null)}
+          onUpdated={(updatedProduct) => {
+            setProducts(products.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+            setFullEditProduct(null);
           }}
         />
       )}
