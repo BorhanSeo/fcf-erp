@@ -44,7 +44,7 @@ export default function OrderDetailClient({ order, profile }: Props) {
   const invoice = order.invoices?.[0];
 
   const [payModal, setPayModal] = useState<boolean>(false);
-  const [payData, setPayData] = useState({ amount: String(order.due_amount), method: "cash", date: new Date().toISOString().split("T")[0], note: `Payment for Order ${order.order_number}` });
+  const [payData, setPayData] = useState({ amount: String(order.due_amount), discount: "0", method: "cash", date: new Date().toISOString().split("T")[0], note: `Payment for Order ${order.order_number}` });
   const [savingPayment, setSavingPayment] = useState(false);
   const [removeItem, setRemoveItem] = useState<{ id: string; name: string; quantity: number; unit: string | null } | null>(null);
   const [removingItem, setRemovingItem] = useState(false);
@@ -95,37 +95,54 @@ export default function OrderDetailClient({ order, profile }: Props) {
   };
 
   const handlePayment = async () => {
-    const amount = Number(payData.amount);
-    if (!amount || amount <= 0 || amount > order.due_amount) { toast.error("Enter a valid amount"); return; }
+    const amount = Number(payData.amount) || 0;
+    const discount = Number(payData.discount) || 0;
+
+    if (amount < 0 || discount < 0) {
+      toast.error("Amount and discount must be positive numbers");
+      return;
+    }
+
+    if (amount === 0 && discount === 0) {
+      toast.error("Please enter a payment amount or a discount");
+      return;
+    }
+
+    if (amount + discount > order.due_amount) {
+      toast.error("The combined payment and discount amount cannot exceed the remaining order due");
+      return;
+    }
     
     setSavingPayment(true);
     try {
       const supabase = createClient();
       const year = new Date().getFullYear();
       
-      const { count } = await supabase.from("payments").select("*", { count: "exact", head: true }).like("payment_number", `PAY-${year}-%`);
-      const paymentNumber = `PAY-${year}-${String((count || 0) + 1).padStart(4, "0")}`;
-      
-      const { error: paymentError } = await supabase.from("payments").insert({
-        payment_number: paymentNumber, customer_id: order.customer_id, amount,
-        payment_method: payData.method, payment_date: payData.date,
-        note: payData.note || null, created_by: profile.id,
-      });
-      if (paymentError) throw paymentError;
-
-      const { data: customer } = await supabase.from("customers").select("total_due").eq("id", order.customer_id).single();
-      if (customer) {
-        await supabase.from("customers").update({ total_due: Math.max(0, customer.total_due - amount) }).eq("id", order.customer_id);
+      if (amount > 0) {
+        const { count } = await supabase.from("payments").select("*", { count: "exact", head: true }).like("payment_number", `PAY-${year}-%`);
+        const paymentNumber = `PAY-${year}-${String((count || 0) + 1).padStart(4, "0")}`;
+        
+        const { error: paymentError } = await supabase.from("payments").insert({
+          payment_number: paymentNumber, customer_id: order.customer_id, amount,
+          payment_method: payData.method, payment_date: payData.date,
+          note: payData.note || null, created_by: profile.id,
+        });
+        if (paymentError) throw paymentError;
       }
 
+      // Compute new values
+      const newDiscount = order.discount_amount + discount;
+      const newTotal = Math.max(0, order.subtotal - newDiscount);
       const newPaid = order.paid_amount + amount;
-      const newDue = order.total_amount - newPaid;
+      const newDue = Math.max(0, newTotal - newPaid);
       let newMethod = "partial";
       if (newDue <= 0) newMethod = payData.method;
       else if (newPaid > 0) newMethod = "partial";
       else newMethod = "due";
 
       const { error: orderError } = await supabase.from("orders").update({
+        discount_amount: newDiscount,
+        total_amount: newTotal,
         paid_amount: newPaid,
         due_amount: newDue,
         payment_method: newMethod
@@ -133,7 +150,11 @@ export default function OrderDetailClient({ order, profile }: Props) {
       
       if (orderError) throw orderError;
 
-      toast.success(`Payment recorded: ${formatCurrency(amount)}`);
+      toast.success(
+        discount > 0
+          ? `Payment recorded: ${formatCurrency(amount)} with ${formatCurrency(discount)} discount`
+          : `Payment recorded: ${formatCurrency(amount)}`
+      );
       setPayModal(false);
       router.refresh();
     } catch (err: any) {
@@ -256,7 +277,16 @@ export default function OrderDetailClient({ order, profile }: Props) {
             )}
             {order.due_amount > 0 && order.customers && (
               <div className="pt-2">
-                <button onClick={() => setPayModal(true)} className="w-full inline-flex justify-center items-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors">
+                <button onClick={() => {
+                  setPayData({
+                    amount: String(order.due_amount),
+                    discount: "0",
+                    method: "cash",
+                    date: new Date().toISOString().split("T")[0],
+                    note: `Payment for Order ${order.order_number}`
+                  });
+                  setPayModal(true);
+                }} className="w-full inline-flex justify-center items-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   Receive Payment
                 </button>
@@ -401,12 +431,43 @@ export default function OrderDetailClient({ order, profile }: Props) {
                   Due: <strong>{formatCurrency(order.due_amount)}</strong>
                 </p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block">Amount (৳) *</label>
-                <input type="number" step="any" min={1} max={order.due_amount} value={payData.amount}
-                  onChange={e => setPayData({ ...payData, amount: e.target.value })}
-                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">Amount Paid (৳) *</label>
+                  <input type="number" step="any" min={0} value={payData.amount}
+                    onChange={e => setPayData({ ...payData, amount: e.target.value })}
+                    className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">Discount (৳)</label>
+                  <input type="number" step="any" min={0} value={payData.discount}
+                    onChange={e => setPayData({ ...payData, discount: e.target.value })}
+                    className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" placeholder="0" />
+                </div>
               </div>
+
+              {(() => {
+                const amt = Number(payData.amount) || 0;
+                const disc = Number(payData.discount) || 0;
+                const remaining = Math.max(0, order.due_amount - (amt + disc));
+                const totalReduction = amt + disc;
+                const isOverLimit = totalReduction > order.due_amount;
+                return (
+                  <div className={`text-xs px-3 py-2 rounded-lg ${isOverLimit ? "bg-red-50 text-red-700 border border-red-100" : "bg-slate-50 text-slate-600 border border-slate-100"}`}>
+                    <div className="flex justify-between">
+                      <span>Total Reduction:</span>
+                      <span className="font-semibold">{formatCurrency(totalReduction)}</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span>Remaining Due:</span>
+                      <span className={`font-bold ${isOverLimit ? "text-red-700" : "text-slate-800"}`}>
+                        {isOverLimit ? "Exceeds remaining due!" : formatCurrency(remaining)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div>
                 <label className="text-sm font-medium text-slate-700 mb-2 block">Payment Method</label>
                 <div className="grid grid-cols-4 gap-2">
