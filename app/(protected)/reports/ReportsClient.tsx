@@ -162,7 +162,7 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
     try {
       const supabase = createClient();
       const [ { data: oData }, { data: pData } ] = await Promise.all([
-        supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at")
+        supabase.from("orders").select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at")
           .gte("created_at", selectedDate).lt("created_at", selectedDate + "T23:59:59").neq("status", "cancelled"),
         supabase.from("payments").select("amount, payment_date, created_at, note")
           .gte("created_at", selectedDate).lt("created_at", selectedDate + "T23:59:59")
