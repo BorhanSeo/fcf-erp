@@ -28,7 +28,7 @@ const PRINT_STYLES = `
 `;
 
 type Tab = "daily" | "monthly" | "yearly" | "products" | "financial";
-interface OrderRow { total_amount: number; paid_amount: number; due_amount: number; status: string; created_at: string; }
+interface OrderRow { total_amount: number; subtotal: number; discount_amount: number; paid_amount: number; due_amount: number; status: string; created_at: string; }
 interface OrderItemRow { quantity: number; line_total: number; created_at: string; products: { purchase_price: number } | null; }
 interface PaymentRow { amount: number; payment_date: string; created_at: string; note?: string; }
 interface Props { todayOrders: OrderRow[]; monthOrders: OrderRow[]; yearOrders: OrderRow[]; monthOrderItems: OrderItemRow[]; yearOrderItems: OrderItemRow[]; todayPayments: PaymentRow[]; monthPayments: PaymentRow[]; yearPayments: PaymentRow[]; currentYear: number; currentMonth: number; }
@@ -46,7 +46,7 @@ function StatCard({ label, value, sub, color = "text-slate-900" }: { label: stri
   );
 }
 
-export default function ReportsClient({ todayOrders, monthOrders, yearOrders, monthOrderItems, yearOrderItems, todayPayments, monthPayments, yearPayments, currentYear, currentMonth }: Props) {
+export default function ReportsClient({ todayOrders, monthOrders: initialMonthOrders, yearOrders, monthOrderItems: initialMonthOrderItems, yearOrderItems, todayPayments, monthPayments, yearPayments, currentYear, currentMonth }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("daily");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -58,6 +58,12 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
   const [prodDateTo, setProdDateTo] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
 
+  // Monthly report state — dynamically fetched
+  const [mOrders, setMOrders] = useState<OrderRow[]>(initialMonthOrders);
+  const [mOrderItems, setMOrderItems] = useState<OrderItemRow[]>(initialMonthOrderItems);
+  const [mPayments, setMPayments] = useState<PaymentRow[]>(monthPayments);
+  const [monthLoading, setMonthLoading] = useState(false);
+
   // Financial Statement state
   const [finDateFrom, setFinDateFrom] = useState(`${new Date().getFullYear()}-01-01`);
   const [finDateTo, setFinDateTo] = useState(new Date().toISOString().split("T")[0]);
@@ -65,6 +71,9 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
   const [finLoading, setFinLoading] = useState(false);
 
   const calcSales = (o: OrderRow[]) => o.reduce((s, x) => s + x.total_amount, 0);
+  // Subtotal = before discount (use for profit calculation against COGS)
+  const calcSubtotal = (o: OrderRow[]) => o.reduce((s, x) => s + (x.subtotal || x.total_amount), 0);
+  const calcDiscount = (o: OrderRow[]) => o.reduce((s, x) => s + (x.discount_amount || 0), 0);
   const calcOrderCollected = (o: OrderRow[]) => o.reduce((s, x) => s + x.paid_amount, 0);
   const calcPayments = (p: PaymentRow[]) => p.reduce((s, x) => s + x.amount, 0);
   const calcCollected = (o: OrderRow[], p: PaymentRow[]) => calcOrderCollected(o) + calcPayments(p);
@@ -72,32 +81,80 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
   // COGS = order items qty × product buy price (dynamic from order data)
   const calcCOGS = (items: OrderItemRow[]) => items.reduce((s, item) => s + (item.quantity * (item.products?.purchase_price || 0)), 0);
 
-  const monthRevenue = calcSales(monthOrders);
-  const monthCost = calcCOGS(monthOrderItems);
-  const monthProfit = monthRevenue - monthCost;
-  const monthMargin = monthRevenue > 0 ? ((monthProfit / monthRevenue) * 100).toFixed(1) : "0";
+  // Fetch monthly data from Supabase for the selected month/year
+  const fetchMonthlyData = async (m?: number, y?: number) => {
+    const month = m ?? selectedMonth;
+    const year = y ?? selectedYear;
+    setMonthLoading(true);
+    try {
+      const supabase = createClient();
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
+      // Step 1: Fetch non-cancelled orders (with IDs for filtering items)
+      const [{ data: ordersData }, { data: allItemsData }, { data: paymentsData }] = await Promise.all([
+        supabase.from("orders")
+          .select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at")
+          .gte("created_at", monthStart)
+          .lt("created_at", monthEnd)
+          .neq("status", "cancelled"),
+        supabase.from("order_items")
+          .select("order_id, quantity, line_total, created_at, products(purchase_price)")
+          .gte("created_at", monthStart)
+          .lt("created_at", monthEnd),
+        supabase.from("payments")
+          .select("amount, payment_date, created_at, note")
+          .gte("created_at", monthStart)
+          .lt("created_at", monthEnd),
+      ]);
+
+      // Step 2: Filter order_items to only include non-cancelled orders
+      const validOrderIds = new Set((ordersData || []).map((o: any) => o.id));
+      const filteredItems = (allItemsData || []).filter((item: any) => validOrderIds.has(item.order_id));
+
+      setMOrders(ordersData || []);
+      setMOrderItems(filteredItems as any);
+      setMPayments((paymentsData || []) as any);
+    } finally {
+      setMonthLoading(false);
+    }
+  };
+
+  // Use subtotal (before discount) for profit calculation — COGS doesn't include discounts
+  const monthSubtotal = calcSubtotal(mOrders);
+  const monthDiscount = calcDiscount(mOrders);
+  const monthRevenue = calcSales(mOrders); // total_amount (after discount) — for display
+  const monthCost = calcCOGS(mOrderItems);
+  const monthProfit = monthSubtotal - monthCost; // Gross profit = subtotal - COGS
+  const monthMargin = monthSubtotal > 0 ? ((monthProfit / monthSubtotal) * 100).toFixed(1) : "0";
+  const monthCollected = calcOrderCollected(mOrders);
+  const monthDue = calcDue(mOrders);
+  const monthPaymentTotal = calcPayments(mPayments);
+
+  const yearSubtotal = calcSubtotal(yearOrders);
   const yearRevenue = calcSales(yearOrders);
   const yearCost = calcCOGS(yearOrderItems);
-  const yearProfit = yearRevenue - yearCost;
+  const yearProfit = yearSubtotal - yearCost;
 
   const dailyChartData = (() => {
     const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const dayStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const dayOrders = monthOrders.filter(o => o.created_at.startsWith(dayStr));
-      return { day: `${day}`, Sales: calcSales(dayOrders), Collected: calcOrderCollected(dayOrders) };
+      const dayOrders = mOrders.filter(o => o.created_at.startsWith(dayStr));
+      return { day: `${day}`, Sales: calcSubtotal(dayOrders), Collected: calcOrderCollected(dayOrders) };
     }).filter(d => d.Sales > 0 || d.Collected > 0);
   })();
 
   const yearlyChartData = MONTHS_SHORT.map((m, i) => {
     const mStr = `${selectedYear}-${String(i + 1).padStart(2, "0")}`;
-    const mOrders = yearOrders.filter(o => o.created_at.startsWith(mStr));
+    const mOrds = yearOrders.filter(o => o.created_at.startsWith(mStr));
     const mItems = yearOrderItems.filter(item => item.created_at.startsWith(mStr));
-    const rev = calcSales(mOrders);
+    const rev = calcSubtotal(mOrds);
     const cost = calcCOGS(mItems);
-    return { Month: m, Sales: rev, COGS: cost, Profit: Math.max(0, rev - cost), Collected: calcOrderCollected(mOrders) };
+    return { Month: m, Sales: rev, COGS: cost, Profit: Math.max(0, rev - cost), Collected: calcOrderCollected(mOrds) };
   });
 
   const fetchDateOrders = async () => {
@@ -119,11 +176,17 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data: items } = await supabase.from("order_items")
-        .select("quantity, unit_price, line_total, products(id, name, product_code, subject, purchase_price)")
-        .gte("created_at", prodDateFrom).lte("created_at", prodDateTo + "T23:59:59");
+      // Fetch non-cancelled order IDs and all items in parallel
+      const [{ data: validOrders }, { data: allItems }] = await Promise.all([
+        supabase.from("orders").select("id").gte("created_at", prodDateFrom).lte("created_at", prodDateTo + "T23:59:59").neq("status", "cancelled"),
+        supabase.from("order_items")
+          .select("order_id, quantity, unit_price, line_total, products(id, name, product_code, subject, purchase_price)")
+          .gte("created_at", prodDateFrom).lte("created_at", prodDateTo + "T23:59:59"),
+      ]);
+      const validIds = new Set((validOrders || []).map((o: any) => o.id));
+      const items = (allItems || []).filter((item: any) => validIds.has(item.order_id));
       const map: Record<string, any> = {};
-      (items || []).forEach((item: any) => {
+      items.forEach((item: any) => {
         const pid = item.products?.id; if (!pid) return;
         if (!map[pid]) map[pid] = { ...item.products, units: 0, revenue: 0, cost: 0 };
         map[pid].units += item.quantity;
@@ -145,13 +208,13 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
       const fromTs = finDateFrom;
       const toTs = finDateTo + "T23:59:59";
 
-      const [{ data: orders }, { data: orderItems }, { data: payments }, { data: expensesData }] = await Promise.all([
+      const [{ data: orders }, { data: allOrderItems }, { data: payments }, { data: expensesData }] = await Promise.all([
         supabase.from("orders")
-          .select("total_amount, paid_amount, due_amount, status, created_at")
+          .select("id, total_amount, paid_amount, due_amount, status, created_at")
           .gte("created_at", fromTs).lte("created_at", toTs)
           .neq("status", "cancelled"),
         supabase.from("order_items")
-          .select("quantity, line_total, products(purchase_price)")
+          .select("order_id, quantity, line_total, products(purchase_price)")
           .gte("created_at", fromTs).lte("created_at", toTs),
         supabase.from("payments")
           .select("amount")
@@ -161,12 +224,16 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
           .gte("expense_date", finDateFrom).lte("expense_date", finDateTo),
       ]);
 
+      // Filter order_items to exclude cancelled orders
+      const finValidIds = new Set((orders || []).map((o: any) => o.id));
+      const orderItems = (allOrderItems || []).filter((item: any) => finValidIds.has(item.order_id));
+
       const totalRevenue = (orders || []).reduce((s: number, o: any) => s + o.total_amount, 0);
       const totalOrderCollected = (orders || []).reduce((s: number, o: any) => s + o.paid_amount, 0);
       const totalOtherPayments = (payments || []).reduce((s: number, p: any) => s + p.amount, 0);
       const totalCollected = totalOrderCollected + totalOtherPayments;
       const totalDue = (orders || []).reduce((s: number, o: any) => s + o.due_amount, 0);
-      const cogs = (orderItems || []).reduce((s: number, item: any) => {
+      const cogs = orderItems.reduce((s: number, item: any) => {
         return s + (item.quantity * (item.products?.purchase_price || 0));
       }, 0);
       const grossProfit = totalRevenue - cogs;
@@ -235,6 +302,17 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
     window.print();
   };
 
+  const handleTabClick = (tabKey: Tab) => {
+    setActiveTab(tabKey);
+    if (tabKey === "monthly") {
+      setSelectedMonth(currentMonth);
+      setSelectedYear(currentYear);
+      fetchMonthlyData(currentMonth, currentYear);
+    } else if (tabKey === "daily") {
+      fetchDateOrders();
+    }
+  };
+
   const TABS: { key: Tab; label: string }[] = [
     { key: "daily", label: "Daily" },
     { key: "monthly", label: "Monthly" },
@@ -254,7 +332,7 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
       <div className="border-b border-slate-200 no-print">
         <div className="flex gap-0">
           {TABS.map(t => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
+            <button key={t.key} onClick={() => handleTabClick(t.key)}
               className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === t.key ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"
               }`}>{t.label}</button>
@@ -343,36 +421,133 @@ export default function ReportsClient({ todayOrders, monthOrders, yearOrders, mo
         <div className="space-y-4">
           <div className="fcf-card p-4 flex items-center gap-3 flex-wrap">
             <label className="text-sm font-medium text-slate-700">Month:</label>
-            <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))}
+            <select value={selectedMonth} onChange={e => { const m = Number(e.target.value); setSelectedMonth(m); fetchMonthlyData(m, selectedYear); }}
               className="h-9 rounded-lg border border-input px-3 text-sm focus-visible:outline-none">
               {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
             </select>
-            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
+            <select value={selectedYear} onChange={e => { const y = Number(e.target.value); setSelectedYear(y); fetchMonthlyData(selectedMonth, y); }}
               className="h-9 rounded-lg border border-input px-3 text-sm focus-visible:outline-none">
               {[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            <button onClick={() => fetchMonthlyData()} disabled={monthLoading}
+              className="h-9 px-4 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+              {monthLoading ? "Loading..." : "View"}
+            </button>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Total Sales" value={formatCurrency(monthRevenue)} color="text-blue-600" sub={`${monthOrders.length} orders`} />
-            <StatCard label="Cost of Goods Sold" value={formatCurrency(monthCost)} color="text-orange-600" sub="qty sold × buy price" />
-            <StatCard label="Gross Profit" value={formatCurrency(monthProfit)} color={monthProfit >= 0 ? "text-green-600" : "text-red-600"} />
-            <StatCard label="Profit Margin" value={`${monthMargin}%`} color={Number(monthMargin) >= 20 ? "text-green-600" : "text-amber-600"} />
-          </div>
-          {dailyChartData.length > 0 && (
-            <div className="fcf-card p-5">
-              <h3 className="font-semibold text-slate-800 mb-4">Daily Sales Chart</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={dailyChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: any) => formatCurrency(v)} />
-                  <Legend />
-                  <Bar dataKey="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Collected" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+
+          {monthLoading ? (
+            <div className="fcf-card p-12 text-center">
+              <svg className="animate-spin w-8 h-8 mx-auto text-blue-500 mb-3" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <p className="text-slate-500 text-sm">Loading {MONTHS[selectedMonth - 1]} {selectedYear} data...</p>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <StatCard label="Total Sales" value={formatCurrency(monthSubtotal)} color="text-blue-600" sub={`${mOrders.length} orders`} />
+                <StatCard label="Discount" value={formatCurrency(monthDiscount)} color="text-purple-600" sub={monthDiscount > 0 ? `net: ${formatCurrency(monthRevenue)}` : "no discount"} />
+                <StatCard label="Cost of Goods Sold" value={formatCurrency(monthCost)} color="text-orange-600" sub="qty sold × buy price" />
+                <StatCard label="Gross Profit" value={formatCurrency(monthProfit)} color={monthProfit >= 0 ? "text-green-600" : "text-red-600"} sub={`sales - COGS`} />
+                <StatCard label="Profit Margin" value={`${monthMargin}%`} color={Number(monthMargin) >= 10 ? "text-green-600" : "text-amber-600"} />
+              </div>
+
+
+              {dailyChartData.length > 0 && (
+                <div className="fcf-card p-5">
+                  <h3 className="font-semibold text-slate-800 mb-4">Daily Sales Chart — {MONTHS[selectedMonth - 1]} {selectedYear}</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={dailyChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v: any) => formatCurrency(v)} />
+                      <Legend />
+                      <Bar dataKey="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Collected" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Daily breakdown table */}
+              <div className="fcf-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h3 className="font-semibold text-slate-800">Daily Breakdown — {MONTHS[selectedMonth - 1]} {selectedYear}</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="fcf-table">
+                    <thead><tr>
+                      <th className="text-left">Date</th>
+                      <th className="text-right">Sales</th>
+                      <th className="text-right">Collected</th>
+                      <th className="text-right">Due</th>
+                      <th className="text-right">Orders</th>
+                    </tr></thead>
+                    <tbody>
+                      {(() => {
+                        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+                        const rows = Array.from({ length: daysInMonth }, (_, i) => {
+                          const day = i + 1;
+                          const dayStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                          const dayOrders = mOrders.filter(o => o.created_at.startsWith(dayStr));
+                          if (dayOrders.length === 0) return null;
+                          return (
+                            <tr key={day}>
+                              <td className="text-sm">{day} {MONTHS_SHORT[selectedMonth - 1]}</td>
+                              <td className="text-right text-sm font-semibold">{formatCurrency(calcSales(dayOrders))}</td>
+                              <td className="text-right text-sm text-green-700">{formatCurrency(calcOrderCollected(dayOrders))}</td>
+                              <td className="text-right text-sm text-red-600">{calcDue(dayOrders) > 0 ? formatCurrency(calcDue(dayOrders)) : "—"}</td>
+                              <td className="text-right text-sm text-slate-500">{dayOrders.length}</td>
+                            </tr>
+                          );
+                        }).filter(Boolean);
+                        if (rows.length === 0) return <tr><td colSpan={5} className="text-center py-8 text-slate-400">No orders in this month</td></tr>;
+                        return rows;
+                      })()}
+                    </tbody>
+                    {mOrders.length > 0 && (
+                      <tfoot><tr className="bg-slate-50 font-semibold">
+                        <td className="px-4 py-2 text-sm">Total</td>
+                        <td className="px-4 py-2 text-right">{formatCurrency(monthRevenue)}</td>
+                        <td className="px-4 py-2 text-right text-green-700">{formatCurrency(monthCollected)}</td>
+                        <td className="px-4 py-2 text-right text-red-600">{formatCurrency(monthDue)}</td>
+                        <td className="px-4 py-2 text-right text-slate-500">{mOrders.length}</td>
+                      </tr></tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+
+              {/* Monthly Payments */}
+              <div className="fcf-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-semibold text-slate-800">Payments Received (Dues/General)</h3>
+                  <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-lg font-bold">Total: {formatCurrency(monthPaymentTotal)}</span>
+                </div>
+                <table className="fcf-table">
+                  <thead><tr><th>Date</th><th>Note</th><th className="text-right">Amount</th></tr></thead>
+                  <tbody>
+                    {mPayments.length === 0
+                      ? <tr><td colSpan={3} className="text-center py-8 text-slate-400">No general payments in this month</td></tr>
+                      : mPayments.map((p, i) => (
+                        <tr key={i}>
+                          <td className="text-sm">{new Date(p.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short" })}</td>
+                          <td className="text-sm text-slate-500 italic">{p.note || "General payment"}</td>
+                          <td className="text-right text-sm font-bold text-green-700">{formatCurrency(p.amount)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                  {mPayments.length > 0 && (
+                    <tfoot><tr className="bg-slate-50 font-semibold">
+                      <td colSpan={2} className="px-4 py-2 text-sm text-right">Total Payments</td>
+                      <td className="px-4 py-2 text-right text-green-700">{formatCurrency(monthPaymentTotal)}</td>
+                    </tr></tfoot>
+                  )}
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

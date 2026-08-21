@@ -24,21 +24,28 @@ export default async function ReportsPage() {
     { data: todayPayments },
     { data: monthPayments },
     { data: yearPayments },
-    { data: monthOrderItems },
-    { data: yearOrderItems },
+    { data: allMonthOrderItems },
+    { data: allYearOrderItems },
   ] = await Promise.all([
     getProfile(user.id),
-    supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", today).neq("status", "cancelled"),
-    supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", monthStart).neq("status", "cancelled"),
-    supabase.from("orders").select("total_amount, paid_amount, due_amount, status, created_at").gte("created_at", yearStart).neq("status", "cancelled"),
+    supabase.from("orders").select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at").gte("created_at", today).neq("status", "cancelled"),
+    supabase.from("orders").select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at").gte("created_at", monthStart).neq("status", "cancelled"),
+    supabase.from("orders").select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at").gte("created_at", yearStart).neq("status", "cancelled"),
     supabase.from("payments").select("amount, created_at, note").gte("created_at", today),
     supabase.from("payments").select("amount, created_at, note").gte("created_at", monthStart),
     supabase.from("payments").select("amount, created_at, note").gte("created_at", yearStart),
-    supabase.from("order_items").select("quantity, line_total, created_at, products(purchase_price)").gte("created_at", monthStart),
-    supabase.from("order_items").select("quantity, line_total, created_at, products(purchase_price)").gte("created_at", yearStart),
+    supabase.from("order_items").select("order_id, quantity, line_total, created_at, products(purchase_price)").gte("created_at", monthStart),
+    supabase.from("order_items").select("order_id, quantity, line_total, created_at, products(purchase_price)").gte("created_at", yearStart),
   ]);
 
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
+  const { data: permSetting } = await supabase.from("settings").select("value").eq("key", "perm_staff_reports").maybeSingle();
+  const allowed = profile?.role === "admin" || (permSetting ? permSetting.value === "true" : false);
+  if (!allowed) redirect("/dashboard");
+
+  // Filter order_items to exclude cancelled orders
+  const yearOrderIds = new Set((yearOrders || []).map((o: any) => o.id));
+  const monthOrderItems = (allMonthOrderItems || []).filter((item: any) => yearOrderIds.has(item.order_id));
+  const yearOrderItems = (allYearOrderItems || []).filter((item: any) => yearOrderIds.has(item.order_id));
 
   return (
     <ReportsClient
@@ -48,8 +55,8 @@ export default async function ReportsPage() {
       todayPayments={(todayPayments || []) as any}
       monthPayments={(monthPayments || []) as any}
       yearPayments={(yearPayments || []) as any}
-      monthOrderItems={(monthOrderItems || []) as any}
-      yearOrderItems={(yearOrderItems || []) as any}
+      monthOrderItems={monthOrderItems as any}
+      yearOrderItems={yearOrderItems as any}
       currentYear={year}
       currentMonth={month}
     />

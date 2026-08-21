@@ -10,9 +10,11 @@ export default async function ExpensesPage() {
   if (!user) redirect("/login");
 
   const profile = await getProfile(user.id) as any;
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
-
   const supabase = await createClient();
+
+  const { data: permSetting } = await (supabase.from("settings") as any).select("value").eq("key", "perm_staff_expenses").maybeSingle();
+  const allowed = profile?.role === "admin" || (permSetting ? permSetting.value === "true" : false);
+  if (!allowed) redirect("/dashboard");
   const { data: expenses, error } = await (supabase.from("expenses") as any)
     .select("*")
     .order("expense_date", { ascending: false })

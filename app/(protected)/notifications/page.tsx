@@ -10,9 +10,11 @@ export default async function NotificationsPage() {
   if (!user) redirect("/login");
 
   const profile = await getProfile(user.id);
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
-
   const supabase = await createClient();
+
+  const { data: permSetting } = await supabase.from("settings").select("value").eq("key", "perm_staff_notifications").maybeSingle();
+  const allowed = profile?.role === "admin" || (permSetting ? permSetting.value === "true" : false);
+  if (!allowed) redirect("/dashboard");
   const [
     { data: templates },
     { data: logs },

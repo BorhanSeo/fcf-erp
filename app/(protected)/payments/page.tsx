@@ -29,6 +29,10 @@ export default async function PaymentsPage() {
 
   if (!profile) redirect("/login");
 
+  const { data: permSetting } = await supabase.from("settings").select("value").eq("key", "perm_staff_payments").maybeSingle();
+  const allowed = profile?.role === "admin" || (permSetting ? permSetting.value === "true" : false);
+  if (!allowed) redirect("/dashboard");
+
   // Compute totals
   const todayTotal = (activeOrders || [])
     .filter(o => o.created_at.startsWith(today))

@@ -18,7 +18,9 @@ export default async function PurchasesPage() {
     supabase.from("purchases").select("total_amount").neq("status", "cancelled"),
   ]);
 
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
+  const { data: permSetting } = await supabase.from("settings").select("value").eq("key", "perm_staff_purchases").maybeSingle();
+  const allowed = profile?.role === "admin" || (permSetting ? permSetting.value === "true" : false);
+  if (!allowed) redirect("/dashboard");
 
   const totalPurchaseValue = purchaseTotals?.reduce((sum, p) => sum + (p.total_amount || 0), 0) || 0;
 

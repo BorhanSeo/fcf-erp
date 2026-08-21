@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { UserRole } from "@/types";
 
+import { useSettingsStore } from "@/store/settingsStore";
+
 interface NavItem {
   href: string;
   label: string;
@@ -52,7 +54,6 @@ const navItems: NavItem[] = [
   {
     href: "/payments",
     label: "Payments & Due",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -62,7 +63,6 @@ const navItems: NavItem[] = [
   {
     href: "/reports",
     label: "Reports",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -72,7 +72,6 @@ const navItems: NavItem[] = [
   {
     href: "/expenses",
     label: "Expenses",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -91,7 +90,6 @@ const navItems: NavItem[] = [
   {
     href: "/purchases",
     label: "Purchases",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -101,7 +99,6 @@ const navItems: NavItem[] = [
   {
     href: "/suppliers",
     label: "Suppliers",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -111,7 +108,6 @@ const navItems: NavItem[] = [
   {
     href: "/notifications",
     label: "Notifications",
-    adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -139,10 +135,30 @@ interface SidebarProps {
 
 export default function Sidebar({ role, collapsed = false, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const settings = useSettingsStore((state) => state.settings);
 
-  const visibleItems = navItems.filter(
-    (item) => !item.adminOnly || role === "admin"
-  );
+  const isModuleAllowed = (href: string) => {
+    if (role === "admin") return true;
+    if (href === "/settings") return false;
+    const keyMap: Record<string, string> = {
+      "/dashboard": "perm_staff_dashboard",
+      "/orders": "perm_staff_orders",
+      "/stock": "perm_staff_stock",
+      "/customers": "perm_staff_customers",
+      "/payments": "perm_staff_payments",
+      "/reports": "perm_staff_reports",
+      "/expenses": "perm_staff_expenses",
+      "/price-list": "perm_staff_price_list",
+      "/purchases": "perm_staff_purchases",
+      "/suppliers": "perm_staff_suppliers",
+      "/notifications": "perm_staff_notifications",
+    };
+    const permKey = keyMap[href];
+    if (!permKey) return true;
+    return settings[permKey] === "true";
+  };
+
+  const visibleItems = navItems.filter((item) => isModuleAllowed(item.href));
 
   return (
     <aside className={cn(

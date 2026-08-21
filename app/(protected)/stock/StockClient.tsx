@@ -10,6 +10,8 @@ import StockAdjustModal from "./StockAdjustModal";
 import AddProductModal from "./AddProductModal";
 import EditProductModal from "./EditProductModal";
 
+import { useSettingsStore } from "@/store/settingsStore";
+
 type ProductWithCategory = Product & {
   product_categories: { id: string; name: string } | null;
 };
@@ -41,6 +43,8 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const admin = isAdmin(profile.role);
+  const settings = useSettingsStore((state) => state.settings);
+  const canViewBuyPrice = admin || settings.perm_staff_view_buy_price === "true";
 
   const filtered = products.filter((p) => {
     if (categoryFilter && p.product_categories?.name !== categoryFilter) return false;
@@ -465,7 +469,7 @@ export default function StockClient({ initialProducts, categories, profile }: Pr
                         </button>
                       )}
                     </td>
-                    <td className="text-right text-sm tabular-nums font-medium text-slate-700 pr-4">{formatCurrency(product.purchase_price)}</td>
+                    <td className="text-right text-sm tabular-nums font-medium text-slate-700 pr-4">{canViewBuyPrice ? formatCurrency(product.purchase_price) : "🔒 Hidden"}</td>
                     <td className="text-right text-sm tabular-nums font-semibold text-slate-800 pr-4">{formatCurrency(product.selling_price)}</td>
                     <td>
                       <div className="flex items-center gap-1">
