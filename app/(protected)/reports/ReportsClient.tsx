@@ -27,7 +27,7 @@ const PRINT_STYLES = `
   }
 `;
 
-type Tab = "daily" | "monthly" | "yearly" | "products" | "financial";
+type Tab = "daily" | "monthly" | "yearly" | "products" | "financial" | "staff";
 interface OrderRow { total_amount: number; subtotal: number; discount_amount: number; paid_amount: number; due_amount: number; status: string; created_at: string; }
 interface OrderItemRow { quantity: number; line_total: number; created_at: string; products: { purchase_price: number } | null; }
 interface PaymentRow { amount: number; payment_date: string; created_at: string; note?: string; }
@@ -69,6 +69,12 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
   const [finDateTo, setFinDateTo] = useState(new Date().toISOString().split("T")[0]);
   const [finData, setFinData] = useState<any>(null);
   const [finLoading, setFinLoading] = useState(false);
+
+  // Staff Sales Report state
+  const [staffDateFrom, setStaffDateFrom] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`);
+  const [staffDateTo, setStaffDateTo] = useState(new Date().toISOString().split("T")[0]);
+  const [staffReport, setStaffReport] = useState<any[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
 
   const calcSales = (o: OrderRow[]) => o.reduce((s, x) => s + x.total_amount, 0);
   // Subtotal = before discount (use for profit calculation against COGS)
@@ -302,6 +308,52 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
     window.print();
   };
 
+  const fetchStaffReport = async (from?: string, to?: string) => {
+    setStaffLoading(true);
+    try {
+      const supabase = createClient();
+      const fromDate = from ?? staffDateFrom;
+      const toDate = to ?? staffDateTo;
+      // Fetch all non-cancelled orders with created_by + profile info
+      const { data: orders } = await supabase
+        .from("orders")
+        .select("id, total_amount, subtotal, discount_amount, paid_amount, due_amount, status, created_at, created_by, profiles(id, full_name, email, role)")
+        .gte("created_at", fromDate)
+        .lte("created_at", toDate + "T23:59:59")
+        .neq("status", "cancelled");
+
+      // Group by staff
+      const map: Record<string, any> = {};
+      (orders || []).forEach((o: any) => {
+        const uid = o.created_by || "unknown";
+        const profile = o.profiles;
+        if (!map[uid]) {
+          map[uid] = {
+            id: uid,
+            name: profile?.full_name || profile?.email || "Unknown",
+            email: profile?.email || "",
+            role: profile?.role || "staff",
+            orderCount: 0,
+            totalSales: 0,
+            totalCollected: 0,
+            totalDue: 0,
+            totalDiscount: 0,
+          };
+        }
+        map[uid].orderCount += 1;
+        map[uid].totalSales += o.total_amount || 0;
+        map[uid].totalCollected += o.paid_amount || 0;
+        map[uid].totalDue += o.due_amount || 0;
+        map[uid].totalDiscount += o.discount_amount || 0;
+      });
+
+      const result = Object.values(map).sort((a: any, b: any) => b.totalSales - a.totalSales);
+      setStaffReport(result);
+    } finally {
+      setStaffLoading(false);
+    }
+  };
+
   const handleTabClick = (tabKey: Tab) => {
     setActiveTab(tabKey);
     if (tabKey === "monthly") {
@@ -310,6 +362,8 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
       fetchMonthlyData(currentMonth, currentYear);
     } else if (tabKey === "daily") {
       fetchDateOrders();
+    } else if (tabKey === "staff") {
+      fetchStaffReport();
     }
   };
 
@@ -318,6 +372,7 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
     { key: "monthly", label: "Monthly" },
     { key: "yearly", label: "Yearly" },
     { key: "products", label: "By Product" },
+    { key: "staff", label: "👤 Staff Sales" },
     { key: "financial", label: "📊 Financial Statement" },
   ];
 
@@ -831,6 +886,151 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
                 <StatCard label="Operating Expenses" value={formatCurrency(finData.totalOpex)} color="text-red-500" />
                 <StatCard label="Net Profit" value={formatCurrency(finData.netProfit)} color={finData.netProfit >= 0 ? "text-emerald-600" : "text-red-600"} sub={`${finData.netMargin}% margin`} />
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Staff Sales Report */}
+      {activeTab === "staff" && (
+        <div className="space-y-4">
+          {/* Date Filter */}
+          <div className="fcf-card p-4 flex flex-wrap items-center gap-3">
+            <label className="text-sm font-medium text-slate-700 whitespace-nowrap">From:</label>
+            <input type="date" value={staffDateFrom} onChange={e => setStaffDateFrom(e.target.value)}
+              className="h-9 rounded-lg border border-input px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <label className="text-sm font-medium text-slate-700 whitespace-nowrap">To:</label>
+            <input type="date" value={staffDateTo} onChange={e => setStaffDateTo(e.target.value)}
+              className="h-9 rounded-lg border border-input px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <button onClick={() => fetchStaffReport()} disabled={staffLoading}
+              className="h-9 px-4 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+              {staffLoading ? "Loading..." : "View Report"}
+            </button>
+          </div>
+
+          {/* Summary Cards */}
+          {staffReport.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard
+                label="Total Staff/Admin"
+                value={String(staffReport.length)}
+                sub="active sellers"
+                color="text-slate-800"
+              />
+              <StatCard
+                label="Total Orders"
+                value={String(staffReport.reduce((s, x) => s + x.orderCount, 0))}
+                sub="combined"
+                color="text-blue-600"
+              />
+              <StatCard
+                label="Total Sales"
+                value={formatCurrency(staffReport.reduce((s, x) => s + x.totalSales, 0))}
+                color="text-emerald-600"
+              />
+              <StatCard
+                label="Total Due"
+                value={formatCurrency(staffReport.reduce((s, x) => s + x.totalDue, 0))}
+                color="text-red-600"
+              />
+            </div>
+          )}
+
+          {/* Staff Table */}
+          <div className="fcf-card overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-slate-800">Sales Performance by Staff</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{staffDateFrom} — {staffDateTo}</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="fcf-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th className="text-center">Orders</th>
+                    <th className="text-right">Total Sales</th>
+                    <th className="text-right">Discount Given</th>
+                    <th className="text-right">Collected</th>
+                    <th className="text-right">Due</th>
+                    <th className="text-right">Avg. Order</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffLoading ? (
+                    <tr><td colSpan={9} className="text-center py-8 text-slate-400">Loading...</td></tr>
+                  ) : staffReport.length === 0 ? (
+                    <tr><td colSpan={9} className="text-center py-8 text-slate-400">No data found. Select a date range and click "View Report".</td></tr>
+                  ) : (
+                    staffReport.map((s, i) => (
+                      <tr key={s.id}>
+                        <td className="text-sm text-slate-400">{i + 1}</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${
+                              s.role === "admin" ? "bg-purple-500" : "bg-blue-500"
+                            }`}>
+                              {(s.name || "?").charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-800">{s.name}</p>
+                              <p className="text-xs text-slate-400">{s.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            s.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {s.role === "admin" ? "Admin" : "Staff"}
+                          </span>
+                        </td>
+                        <td className="text-center text-sm font-semibold">{s.orderCount}</td>
+                        <td className="text-right text-sm font-bold text-blue-700">{formatCurrency(s.totalSales)}</td>
+                        <td className="text-right text-sm text-orange-600">{s.totalDiscount > 0 ? formatCurrency(s.totalDiscount) : "—"}</td>
+                        <td className="text-right text-sm font-semibold text-emerald-700">{formatCurrency(s.totalCollected)}</td>
+                        <td className="text-right text-sm text-red-600">{s.totalDue > 0 ? formatCurrency(s.totalDue) : "—"}</td>
+                        <td className="text-right text-sm text-slate-600">{s.orderCount > 0 ? formatCurrency(s.totalSales / s.orderCount) : "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {staffReport.length > 1 && (
+                  <tfoot>
+                    <tr className="bg-slate-50 font-semibold">
+                      <td colSpan={3} className="text-sm">Total</td>
+                      <td className="text-center text-sm">{staffReport.reduce((s, x) => s + x.orderCount, 0)}</td>
+                      <td className="text-right text-sm text-blue-700">{formatCurrency(staffReport.reduce((s, x) => s + x.totalSales, 0))}</td>
+                      <td className="text-right text-sm text-orange-600">{formatCurrency(staffReport.reduce((s, x) => s + x.totalDiscount, 0))}</td>
+                      <td className="text-right text-sm text-emerald-700">{formatCurrency(staffReport.reduce((s, x) => s + x.totalCollected, 0))}</td>
+                      <td className="text-right text-sm text-red-600">{formatCurrency(staffReport.reduce((s, x) => s + x.totalDue, 0))}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+
+          {/* Bar Chart */}
+          {staffReport.length > 0 && (
+            <div className="fcf-card p-4">
+              <h3 className="font-semibold text-slate-800 mb-4">Sales Comparison</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={staffReport.map(s => ({ name: s.name.split(" ")[0], Sales: s.totalSales, Collected: s.totalCollected, Due: s.totalDue }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={v => `৳${(v/1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: any) => formatCurrency(v)} />
+                  <Legend />
+                  <Bar dataKey="Sales" fill="#3b82f6" radius={[4,4,0,0]} />
+                  <Bar dataKey="Collected" fill="#10b981" radius={[4,4,0,0]} />
+                  <Bar dataKey="Due" fill="#ef4444" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
