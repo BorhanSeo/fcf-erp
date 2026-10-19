@@ -963,7 +963,7 @@ export default function ReportsClient({ todayOrders, monthOrders: initialMonthOr
                   {staffLoading ? (
                     <tr><td colSpan={9} className="text-center py-8 text-slate-400">Loading...</td></tr>
                   ) : staffReport.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center py-8 text-slate-400">No data found. Select a date range and click "View Report".</td></tr>
+                    <tr><td colSpan={9} className="text-center py-8 text-slate-400">No data found. Select a date range and click &quot;View Report&quot;.</td></tr>
                   ) : (
                     staffReport.map((s, i) => (
                       <tr key={s.id}>
